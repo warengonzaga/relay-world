@@ -94,7 +94,7 @@
     gap: 8px;
   }
   #city-app {
-    height: calc(100dvh - 138px);
+    height: calc(100dvh - 180px);
     min-height: 320px;
   }
   .intro {

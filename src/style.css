@@ -238,8 +238,26 @@ a .icon {
   width: 17px;
   height: 17px;
 }
+.retirement-banner {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 8px 16px;
+  background: var(--warning-surface);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  text-align: center;
+}
+.retirement-banner a {
+  color: var(--accent-text);
+  font-weight: 650;
+}
 #city-app {
-  height: calc(100dvh - 160px);
+  height: calc(100dvh - 202px);
   min-height: 420px;
   position: relative;
   isolation: isolate;

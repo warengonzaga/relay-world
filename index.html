@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#161616" />
     <meta
       name="description"
-      content="A little city powered by crosschain activity. Watch Relay transfers come to life as pedestrians, cars, trains, and whale-sized airplanes."
+      content="Relay World is a discontinued community project. Explore its illustrative demo city with sample data only."
     />
-    <title>Relay City — Every transfer has a destination.</title>
+    <title>Relay World — Community Project Discontinued</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
@@ -35,6 +35,11 @@
         ></a>
       </div>
     </header>
+    <div class="retirement-banner" role="status">
+      <span>Relay World is a discontinued community project. This city now shows demo data only.</span>
+      <a href="https://github.com/warengonzaga/relay-world#project-status">Project notice</a>
+      <a href="https://docs.relay.link/references/api/api_guides/migrating-to-requests-v3" target="_blank" rel="noopener noreferrer">Relay API migration guide</a>
+    </div>
     <main id="city-app">
       <div
         id="world"
@@ -65,8 +70,7 @@
       <div class="scene-topbar">
         <label class="chain-filter source-filter"
           ><select id="data-view" aria-label="Choose activity source">
-            <option value="live">Relay activity</option>
-            <option value="demo">Demo city</option></select
+            <option value="demo">Demo city · illustrative data</option></select
           ><span data-icon="chevronDown"></span
         ></label>
         <label class="chain-filter"
@@ -212,10 +216,10 @@
           <div id="flight-bearings"></div>
         </details>
         <a
-          href="https://docs.relay.link/references/api/get-requests"
+          href="https://docs.relay.link/references/api/api_guides/migrating-to-requests-v3"
           target="_blank"
           rel="noopener noreferrer"
-          >Explore the Relay API <span data-icon="arrowUpRight"></span
+          >Relay Requests v3 migration guide <span data-icon="arrowUpRight"></span
         ></a>
       </aside>
       <div class="city-operations" aria-label="City traffic status">

@@ -46,7 +46,7 @@ test("CORS configuration accepts exact origins and rejects unsafe or ambiguous e
   }
 });
 
-test("Pages can read the API while disallowed origins are rejected before Relay is called", async (t) => {
+test("Pages receive demo data while disallowed origins are rejected without Relay calls", async (t) => {
   let calls = 0;
   const base = await serve(t, {
     env: { RELAY_API_KEY: "fixture-private-key", ALLOWED_ORIGINS: pagesOrigin },
@@ -84,9 +84,12 @@ test("Pages can read the API while disallowed origins are rejected before Relay 
       null,
     );
     assert.equal(response.headers.get("Vary"), "Origin");
-    assert.ok(!(await response.text()).includes("fixture-private-key"));
+    const data = await response.json();
+    assert.equal(data.mode, "demo");
+    assert.match(data.notice, /illustrative demo/i);
+    assert.ok(!JSON.stringify(data).includes("fixture-private-key"));
   }
-  assert.equal(calls, 1, "existing shared cache still bounds upstream calls");
+  assert.equal(calls, 0, "the retired server never calls Relay");
 });
 
 test("empty allowlist keeps local calls working without trusting forwarded headers", async (t) => {

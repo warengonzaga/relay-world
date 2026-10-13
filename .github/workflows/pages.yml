@@ -36,9 +36,6 @@ jobs:
         run: npm test
       - name: Build city
         run: npm run build:pages -- --base="/${GITHUB_REPOSITORY#*/}/"
-        env:
-          # Public activity endpoint, never the Relay API key.
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
       - name: Upload static site
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:

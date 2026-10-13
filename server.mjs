@@ -2,7 +2,7 @@ import { createServer as createHttpServer } from "node:http";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createDemoTransfers, normalizeRequest } from "./src/activity.js";
+import { createDemoTransfers } from "./src/activity.js";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -34,10 +34,8 @@ function isOrigin(value) {
 
 export function createServer({
   env = process.env,
-  fetchImpl = fetch,
   distDir = fileURLToPath(new URL("./dist", import.meta.url)),
 } = {}) {
-  const apiKey = env.RELAY_API_KEY?.trim();
   const apiOnly = env.API_ONLY === "true";
   const allowedOrigins = new Set(
     env.ALLOWED_ORIGINS?.trim()
@@ -48,17 +46,6 @@ export function createServer({
     throw new Error(
       "ALLOWED_ORIGINS must contain comma-separated HTTP(S) origins without paths, trailing slashes, credentials, or wildcards",
     );
-  const legacy = !apiKey && env.RELAY_ALLOW_LEGACY_PREVIEW === "true";
-  const coverage = legacy
-    ? "sample"
-    : env.RELAY_NETWORK_SCOPE === "global"
-      ? "network"
-      : "integrator";
-  let cached;
-  let expiresAt = 0;
-  let inFlight;
-  const trackedCache = new Map();
-
   function demo(notice) {
     return {
       mode: "demo",
@@ -70,136 +57,10 @@ export function createServer({
     };
   }
 
-  async function requestRows(parameters) {
-    const url = new URL(
-      `https://api.relay.link/requests/${legacy ? "v2" : "v3"}`,
-    );
-    url.search = new URLSearchParams({
-      ...parameters,
-      ...(!legacy ? { includeAuthenticatedData: "true" } : {}),
-    }).toString();
-    const upstream = await fetchImpl(url, {
-      headers: apiKey ? { "x-api-key": apiKey } : {},
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!upstream.ok) throw new Error("Relay request failed");
-    const body = await upstream.json();
-    if (!Array.isArray(body.requests))
-      throw new Error("Unexpected Relay response");
-    return body.requests;
-  }
-
-  function trackedRequest(id) {
-    const cached = trackedCache.get(id);
-    if (cached && (cached.pending || Date.now() < cached.expiresAt))
-      return cached.result;
-    // ponytail: 128 process-local entries; use shared storage for a multi-worker public deployment.
-    if (trackedCache.size >= 128)
-      trackedCache.delete(trackedCache.keys().next().value);
-    const entry = { pending: true, expiresAt: 0 };
-    entry.result = requestRows({ id, limit: "1" })
-      .then((rows) =>
-        normalizeRequest(rows.slice(0, 1).find((row) => row.id === id)),
-      )
-      .catch(() => null)
-      .finally(() => {
-        entry.pending = false;
-        entry.expiresAt = Date.now() + 10_000;
-      });
-    trackedCache.set(id, entry);
-    return entry.result;
-  }
-
-  async function trackedActivity(ids) {
-    const data = await activity();
-    if (!ids.length)
-      return { ...data, trackingNotice: null, trackingMissingIds: [] };
-    if (data.mode !== "live")
-      return {
-        ...data,
-        trackingNotice:
-          "Live request tracking is unavailable. Last known live stages must not advance without new evidence.",
-        trackingMissingIds: ids,
-      };
-    const merged = new Map(data.transfers.map((row) => [row.id, row]));
-    const results = await Promise.all(ids.map(trackedRequest));
-    const trackingMissingIds = [];
-    results.forEach((row, index) => {
-      if (!row) {
-        trackingMissingIds.push(ids[index]);
-        return;
-      }
-      const previous = merged.get(row.id);
-      if (
-        !previous ||
-        Date.parse(row.updatedAt) >= Date.parse(previous.updatedAt)
-      )
-        merged.set(row.id, row);
-    });
-    return {
-      ...data,
-      transfers: [...merged.values()],
-      trackingMissingIds,
-      trackingNotice: trackingMissingIds.length
-        ? `${trackingMissingIds.length} tracked request(s) could not be refreshed. Last confirmed stages remain unchanged.`
-        : null,
-    };
-  }
-
-  async function refreshActivity() {
-    if (!apiKey && !legacy) {
-      return demo(
-        "Demo city: illustrative transfers, not real Relay activity. Connect an approved Relay API key to watch recent transfers.",
-      );
-    }
-    try {
-      const rows = await requestRows({
-        limit: "50",
-        sortBy: "updatedAt",
-        sortDirection: "desc",
-      });
-      const seen = new Set();
-      const transfers = rows
-        .slice(0, 50)
-        .map(normalizeRequest)
-        .filter((row) => {
-          if (!row || seen.has(row.id)) return false;
-          seen.add(row.id);
-          return true;
-        });
-      const notice = legacy
-        ? "Legacy preview: recent public records from Relay v2, retiring November 24, 2026. Pending visibility is not guaranteed. Gate stages use confirmed API evidence; this is not a daily total."
-        : coverage === "network"
-          ? "Recent records from the configured network feed. Pending stages and app attribution are limited to requests this key can access. Up to 50 records per refresh; daily totals are unavailable."
-          : "Recent records visible to this integrator key. Gate stages use confirmed API evidence. Up to 50 records per refresh; pending stages and app attribution are owner-scoped, not all Relay activity.";
-      return {
-        mode: "live",
-        coverage,
-        updatedAt: new Date().toISOString(),
-        transfers,
-        notice,
-        dailyCount: null,
-      };
-    } catch {
-      return demo(
-        "Relay activity is temporarily unavailable. Showing an illustrative demo, not live transfers.",
-      );
-    }
-  }
-
   async function activity() {
-    if (cached && Date.now() < expiresAt) return cached;
-    // ponytail: one process-local cache; use shared storage if deploying multiple workers.
-    inFlight ??= refreshActivity()
-      .then((result) => {
-        cached = result;
-        expiresAt = Date.now() + 10_000;
-        return result;
-      })
-      .finally(() => {
-        inFlight = undefined;
-      });
-    return inFlight;
+    return demo(
+      "Relay World is discontinued. This illustrative demo uses sample transfers only and does not connect to Relay's API.",
+    );
   }
 
   return createHttpServer(async (req, res) => {
@@ -270,7 +131,7 @@ export function createServer({
         );
         return;
       }
-      const data = await trackedActivity([...new Set(ids)].sort());
+      const data = await activity();
       res.writeHead(200, {
         "Content-Type": "application/json",
         "Cache-Control": "no-store",

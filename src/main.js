@@ -11,7 +11,7 @@ import {
 import { createCity } from "./city.js";
 import { chainMark } from "./chain-marks.js";
 import { icon, hydrateIcons } from "./icons.js";
-import { activityEndpoint, assetUrl } from "./config.js";
+import { assetUrl } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
 const money = new Intl.NumberFormat("en-US", {
@@ -49,11 +49,10 @@ let demoSource = {
   coverage: "sample",
   transfers: createDemoTransfers(),
   notice:
-    "This is an illustrative city. Demo trips replay continuously so you can explore all six kinds of traffic. Choose Relay activity to use the connected feed.",
+    "Relay World is discontinued. This illustrative demo uses sample transfers only and does not connect to Relay's API.",
 };
 let filter = "all";
 let direction = "all";
-let refreshTimer;
 let toastTimer;
 let disposed = false;
 let selectedId;
@@ -412,43 +411,9 @@ function renderMode() {
       : "Preview a whale-sized transfer";
 }
 
-async function loadActivity() {
-  if (!activityEndpoint) {
-    connectedSource = {
-      ...demoSource,
-      notice:
-        "The live feed is not connected yet. This city shows illustrative demo transfers, not real Relay activity.",
-    };
-    applySource();
-    return;
-  }
-  try {
-    const tracked = city?.trackedIds ?? [];
-    const query = tracked.length
-      ? `?tracked=${encodeURIComponent(tracked.join(","))}`
-      : "";
-    const response = await fetch(`${activityEndpoint}${query}`, {
-      credentials: "omit",
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!response.ok) throw new Error("Feed unavailable");
-    const data = await response.json();
-    if (!["live", "demo"].includes(data.mode) || !Array.isArray(data.transfers))
-      throw new Error("Invalid feed");
-    connectedSource = data;
-  } catch {
-    connectedSource = {
-      mode: "demo",
-      coverage: "sample",
-      updatedAt: new Date().toISOString(),
-      transfers: createDemoTransfers(),
-      notice:
-        "Live activity is unavailable in this preview. These are illustrative transfers, not real Relay activity.",
-    };
-  }
-  if (disposed) return;
+function loadActivity() {
+  connectedSource = demoSource;
   applySource();
-  refreshTimer = setTimeout(loadActivity, 12000);
 }
 
 function applySource(reset = false) {
@@ -633,7 +598,6 @@ try {
 window.addEventListener("pagehide", (event) => {
   if (event.persisted) return;
   disposed = true;
-  clearTimeout(refreshTimer);
   clearTimeout(toastTimer);
   clearInterval(uiTimer);
   city?.dispose();

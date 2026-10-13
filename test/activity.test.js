@@ -392,163 +392,36 @@ test("no credentials makes no upstream request and explicitly labels demo activi
   assert.equal(data.dailyCount, null);
 });
 
-test("live requests share one bounded fetch, keep keys server-side, and respect scope", async (t) => {
+test("Relay credentials do not enable upstream activity after retirement", async (t) => {
   let calls = 0;
   const base = await serve(t, {
-    env: { RELAY_API_KEY: "fixture-key" },
-    fetchImpl: async (url, options) => {
+    env: {
+      RELAY_API_KEY: "fixture-key",
+      RELAY_ALLOW_LEGACY_PREVIEW: "true",
+    },
+    fetchImpl: async () => {
       calls++;
-      assert.equal(url.pathname, "/requests/v3");
-      assert.equal(url.searchParams.get("limit"), "50");
-      assert.equal(url.searchParams.has("status"), false);
-      assert.equal(url.searchParams.get("includeAuthenticatedData"), "true");
-      assert.equal(options.headers["x-api-key"], "fixture-key");
-      return {
-        ok: true,
-        json: async () => ({ requests: [v2, v2, { ...v2, status: "refund" }] }),
-      };
+      throw new Error("Retired server must not call Relay");
     },
   });
-  const results = await Promise.all(
-    Array.from({ length: 5 }, async () =>
-      (await fetch(`${base}/api/activity`)).json(),
-    ),
-  );
-  assert.equal(calls, 1);
-  assert.equal(results[0].mode, "live");
-  assert.equal(results[0].coverage, "integrator");
-  assert.equal(results[0].transfers.length, 1);
-  assert.ok(!JSON.stringify(results).includes("fixture-key"));
-});
-
-test("legacy opt-in is sample coverage and upstream errors are explicit demo fallback", async (t) => {
-  const base = await serve(t, {
-    env: { RELAY_ALLOW_LEGACY_PREVIEW: "true" },
-    fetchImpl: async (url) => {
-      assert.equal(url.pathname, "/requests/v2");
-      return { ok: true, json: async () => ({ requests: [v2] }) };
-    },
-  });
-  const data = await (await fetch(`${base}/api/activity`)).json();
+  const requestId = `0x${"a".repeat(64)}`;
+  const response = await fetch(`${base}/api/activity?tracked=${requestId}`);
+  const data = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(data.mode, "demo");
   assert.equal(data.coverage, "sample");
-  assert.match(data.notice, /Legacy preview/);
-  const failedBase = await serve(t, {
-    env: { RELAY_API_KEY: "fixture-key" },
-    fetchImpl: async () => {
-      throw new Error("upstream secrets must not leak");
-    },
-  });
-  const failure = await (await fetch(`${failedBase}/api/activity`)).json();
-  assert.equal(failure.mode, "demo");
-  assert.match(failure.notice, /temporarily unavailable/);
-  assert.ok(!JSON.stringify(failure).includes("upstream secrets"));
+  assert.match(data.notice, /discontinued/i);
+  assert.ok(!JSON.stringify(data).includes("fixture-key"));
+  assert.equal(calls, 0);
 });
 
-test("tracked requests survive latest-page eviction and share exact-ID lookups", async (t) => {
-  const failedId = `0x${"a".repeat(64)}`;
-  const successId = `0x${"b".repeat(64)}`;
-  const calls = new Map();
-  const base = await serve(t, {
-    env: { RELAY_API_KEY: "fixture-key" },
-    fetchImpl: async (url) => {
-      const id = url.searchParams.get("id");
-      calls.set(id, (calls.get(id) ?? 0) + 1);
-      assert.equal(url.origin, "https://api.relay.link");
-      assert.equal(url.pathname, "/requests/v3");
-      assert.equal(url.searchParams.get("includeAuthenticatedData"), "true");
-      const rows = id
-        ? [
-            {
-              ...v2,
-              id,
-              status: id === failedId ? "failure" : "success",
-              updatedAt: "2026-09-30T09:00:00.000Z",
-              data: {
-                ...v2.data,
-                failReason: id === failedId ? "BLOCKED_WALLET" : null,
-                referrer: "opensea|private-suffix",
-              },
-            },
-          ]
-        : [
-            v2,
-            {
-              ...v2,
-              id: successId,
-              status: "pending",
-              updatedAt: "2026-09-30T08:00:00.000Z",
-            },
-          ];
-      if (id) assert.equal(url.searchParams.get("limit"), "1");
-      return { ok: true, json: async () => ({ requests: rows }) };
-    },
-  });
-  const responses = await Promise.all(
-    Array.from({ length: 5 }, (_, index) =>
-      fetch(
-        `${base}/api/activity?tracked=${index % 2 ? failedId + "," + successId : successId + "," + failedId}`,
-      ).then((response) => response.json()),
-    ),
-  );
-  assert.equal(calls.get(null), 1);
-  assert.equal(calls.get(failedId), 1);
-  assert.equal(calls.get(successId), 1);
-  for (const data of responses) {
-    assert.equal(data.transfers.length, 3);
-    assert.equal(
-      data.transfers.find((row) => row.id === failedId).stage,
-      "failed",
-    );
-    assert.equal(
-      data.transfers.find((row) => row.id === failedId).failureReason,
-      "BLOCKED_WALLET",
-    );
-    assert.equal(
-      data.transfers.find((row) => row.id === successId).stage,
-      "complete",
-    );
-    assert.equal(data.trackingNotice, null);
-    assert.deepEqual(data.trackingMissingIds, []);
-    assert.ok(!JSON.stringify(data).includes("private-suffix"));
-  }
-});
-
-test("missing or failed tracked lookups report incomplete tracking without advancing a stage", async (t) => {
-  const unavailableId = `0x${"c".repeat(64)}`;
-  const invisibleId = `0x${"d".repeat(64)}`;
-  const base = await serve(t, {
-    env: { RELAY_ALLOW_LEGACY_PREVIEW: "true" },
-    fetchImpl: async (url) => {
-      const id = url.searchParams.get("id");
-      assert.equal(url.pathname, "/requests/v2");
-      assert.equal(url.searchParams.has("includeAuthenticatedData"), false);
-      if (id === unavailableId) throw new Error("secret upstream error");
-      return {
-        ok: true,
-        json: async () => ({
-          requests: id ? [] : [{ ...v2, id: unavailableId, status: "pending" }],
-        }),
-      };
-    },
-  });
-  const data = await (
-    await fetch(`${base}/api/activity?tracked=${unavailableId},${invisibleId}`)
-  ).json();
-  assert.equal(data.mode, "live");
-  assert.equal(data.transfers.length, 1);
-  assert.equal(data.transfers[0].status, "pending");
-  assert.deepEqual(data.trackingMissingIds, [unavailableId, invisibleId]);
-  assert.match(data.trackingNotice, /2 tracked request/);
-  assert.ok(!JSON.stringify(data).includes("secret upstream error"));
-});
-
-test("tracked IDs reject malformed input and enforce the twelve-request bound before fetching", async (t) => {
+test("tracked IDs remain validated but never trigger Relay requests", async (t) => {
   let calls = 0;
   const base = await serve(t, {
     env: { RELAY_API_KEY: "fixture-key" },
     fetchImpl: async () => {
       calls++;
-      return { ok: true, json: async () => ({ requests: [] }) };
+      throw new Error("Retired server must not call Relay");
     },
   });
   const ids = Array.from(
@@ -569,13 +442,12 @@ test("tracked IDs reject malformed input and enforce the twelve-request bound be
       400,
     );
   }
-  assert.equal(calls, 0);
   const response = await fetch(
     `${base}/api/activity?tracked=${ids.slice(0, 12).join(",")}`,
   );
   assert.equal(response.status, 200);
-  assert.equal(calls, 13);
-  assert.equal((await response.json()).trackingMissingIds.length, 12);
+  assert.equal((await response.json()).mode, "demo");
+  assert.equal(calls, 0);
 });
 
 test("static serving prevents traversal and symlink escapes and rejects writes", async (t) => {
